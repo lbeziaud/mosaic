@@ -28,18 +28,40 @@ ach_var = np.sum(RACE_WEIGHT * (ACH_STD**2 + ACH_LOC**2 - ach_loc_**2))
 
 
 def run(
-    num_years=30, num_active=4, wgt_aa_race=0, wgt_aa_ses=0, wgt_recr_race=0, seed=None
+    num_years=30,
+    num_active=4,
+    wgt_aa_race=0,
+    wgt_aa_ses=0,
+    wgt_recr_race=0,
+    seed=None,
+    aa_formula1=False,
+    aa_penalize=False,
+    percept_qual_07=False,
 ):
+    """
+
+    :param num_years:
+    :param num_active: number of colleges using policies
+    :param wgt_aa_race: weight of race-based afformative action
+    :param wgt_aa_ses: weight of SES-based affirmative action
+    :param wgt_recr_race: weight of race-based recruiting
+    :param seed: seed for random number generator
+    :param aa_formula1: alternative SES-based AA
+    :param aa_penalize: alternative SES-based AA
+    :param percept_qual_07: alternative perception quality
+    :return:
+    """
     rng = np.random.default_rng(seed)
 
     qual = np.empty((num_years, NUM_COLLS))
     qual[0] = rng.normal(QUALITY_LOC, QUALITY_STD, size=NUM_COLLS)
-    qual[0, ::-1].sort()  # sort by (descending) qual
+    qual[0, ::-1].sort()  # sort by (descending) quality
 
+    # mask is true if college (top num_active) will use policy
     active = np.zeros(NUM_COLLS, dtype=bool)
     active[:num_active] = True
 
-    expyield = 0.2 + 0.6 * np.argsort(qual[0])[::-1] / (NUM_COLLS - 1)
+    expected_yield = 0.2 + 0.6 * np.argsort(qual[0])[::-1] / (NUM_COLLS - 1)
 
     race = rng.choice(4, size=(num_years, NUM_STUDS), p=RACE_WEIGHT)
     minority = (race == 1) | (race == 2)  # Black or Hispanic
@@ -51,16 +73,22 @@ def run(
     esd = np.sqrt(ACH_STD**2 - b**2 * RES_STD**2)
     ach = a[race] + b[race] * res + esd[race] * rng.normal(size=(num_years, NUM_STUDS))
 
-    sach_rel = np.clip(0.7 + 0.1 * res, 0.5, 0.9)
-    sach_err_std = np.sqrt(ach_var * (1 - sach_rel) / sach_rel)
-    sach_err = rng.normal(0, sach_err_std, (num_years, NUM_STUDS))
-    sach = ach + 0.1 * res + sach_err
+    stud_obs_ach_reliability = np.clip(0.7 + 0.1 * res, 0.5, 0.9)
+    stud_obs_ach_err_std = np.sqrt(
+        ach_var * (1 - stud_obs_ach_reliability) / stud_obs_ach_reliability
+    )
+    stud_obs_ach_err = rng.normal(0, stud_obs_ach_err_std, (num_years, NUM_STUDS))
+    stud_obs_ach = ach + 0.1 * res + stud_obs_ach_err
 
-    cach_err_std = np.sqrt(ach_var * (1 - 0.8) / 0.8)
-    cach_err = rng.normal(0, cach_err_std, (num_years, NUM_COLLS, NUM_STUDS))
-    cach = (ach + 0.1 * res)[:, np.newaxis, :] + cach_err
+    coll_obs_ach_err_std = np.sqrt(ach_var * (1 - 0.8) / 0.8)
+    coll_obs_ach_err = rng.normal(
+        0, coll_obs_ach_err_std, (num_years, NUM_COLLS, NUM_STUDS)
+    )
+    coll_obs_ach = (ach + 0.1 * res)[:, np.newaxis, :] + coll_obs_ach_err
 
-    squal_err_ = rng.normal(size=(num_years, NUM_COLLS, NUM_STUDS))  # pre-draw noise
+    stud_obs_qual_err_ = rng.normal(
+        size=(num_years, NUM_COLLS, NUM_STUDS)
+    )  # pre-draw noise
 
     application = np.zeros((num_years, NUM_COLLS, NUM_STUDS), dtype=bool)
     admission = np.zeros_like(application)
@@ -69,38 +97,47 @@ def run(
     admit_reg = LogisticRegression(
         warm_start=True, random_state=np.random.RandomState(seed)
     )
-    # TODO: -0.015 in the paper but prev reardon used X=Q-A not A-Q?
     admit_reg.coef_ = np.array([[0.015]])
     admit_reg.intercept_ = np.array([0.0])
     admit_reg.classes_ = np.array([0, 1])
 
     for y in range(num_years):
-        # update qual
+        # update quality
         if y > 0:
             # mean achievement of last enrolled students
-            nenro1 = enrollment[y - 1].sum(axis=1)
-            mach = enrollment[y - 1] @ ach[y - 1]
-            mach = np.divide(mach, nenro1, out=mach, where=nenro1 != 0)
-            qual[y] = 0.9 * qual[y - 1] + 0.1 * mach
+            num_enroll = enrollment[y - 1].sum(axis=1)
+            mean_coll_ach = enrollment[y - 1] @ ach[y - 1]
+            mean_coll_ach = np.divide(
+                mean_coll_ach, num_enroll, out=mean_coll_ach, where=num_enroll != 0
+            )
+            qual[y] = 0.9 * qual[y - 1] + 0.1 * mean_coll_ach
 
-        # update expyield
+        # update expected_yield
         if y > 0:
             # up to 3 years of adm / enroll
             last3 = slice(max(0, y - 3), y)
-            nenro3 = enrollment[last3].sum(axis=(0, 2))
-            nadms3 = admission[last3].sum(axis=(0, 2))
+            num_enroll_3 = enrollment[last3].sum(axis=(0, 2))
+            num_admit_3 = admission[last3].sum(axis=(0, 2))
             # 0.0001 if 0 enroll
-            expyield = np.divide(
-                nenro3, nadms3, out=np.full(NUM_COLLS, 0.0001), where=nenro3 != 0
+            expected_yield = np.divide(
+                num_enroll_3,
+                num_admit_3,
+                out=np.full(NUM_COLLS, 0.0001),
+                where=num_enroll_3 != 0,
             )
 
-        # update squal
-        squal_rel = np.clip(0.7 + 0.1 * res[y], 0.5, 0.9)
-        squal_err_std = np.sqrt(
-            np.var(qual[y]) * ((1 - squal_rel) / squal_rel)[np.newaxis, :]
+        # update stud_obs_qual
+        stud_obs_qual_rel = np.clip(
+            0.7 + 0.1 * res[y], 0.5, 0.7 if percept_qual_07 else 0.9
         )
-        squal_err = squal_err_std * squal_err_[y]  # squal_err_[y] ~ N(0, 1)
-        squal = qual[y, :, np.newaxis] + squal_err
+        stud_obs_qual_err_std = np.sqrt(
+            np.var(qual[y])
+            * ((1 - stud_obs_qual_rel) / stud_obs_qual_rel)[np.newaxis, :]
+        )
+        stud_obs_qual_err = (
+            stud_obs_qual_err_std * stud_obs_qual_err_[y]
+        )  # stud_obs_qual_err_[y] ~ N(0, 1)
+        stud_obs_qual = qual[y, :, np.newaxis] + stud_obs_qual_err
 
         # update admit_reg
         if y > 5:
@@ -111,43 +148,70 @@ def run(
             x_train = x_train[mask].reshape(-1, 1)
             admit_reg.fit(x_train, y_train)
 
-        util = -250 + squal
-        padmit = admit_reg.predict_proba((sach[y] - squal).reshape(-1, 1))[
-            :, 1
-        ].reshape((NUM_COLLS, NUM_STUDS))
-        napps = 4 + np.rint(0.5 * res[y]).astype(int)
-        nadms = (NUM_SEATS // expyield).astype(int)
+        util = -250 + stud_obs_qual
+        admit_prob = admit_reg.predict_proba(
+            (stud_obs_ach[y] - stud_obs_qual).reshape(-1, 1)
+        )[:, 1].reshape((NUM_COLLS, NUM_STUDS))
+        num_apps = 4 + np.rint(0.5 * res[y]).astype(int)
+        num_adms = (NUM_SEATS // expected_yield).astype(int)
 
         if y >= 15:  # action
-            aa_race = wgt_aa_race * minority[y]
-            aa_ses = wgt_aa_ses * np.clip(-1 * zscore(res[y]), 0, None)
-            cach[y, active] += aa_race + aa_ses
-            util[active[:, np.newaxis] * minority[y, np.newaxis, :]] += wgt_recr_race
+            aa_race = wgt_aa_race * minority[y]  # racial affirmative action
+            # ses affirmative action
+            if aa_formula1:
+                aa_ses = wgt_aa_ses * res[y]
+            else:
+                if aa_penalize:
+                    aa_ses = wgt_aa_ses * -1 * zscore(res[y])
+                else:
+                    aa_ses = wgt_aa_ses * np.clip(-1 * zscore(res[y]), 0, None)
+            coll_obs_ach[y, active] += aa_race + aa_ses
+            util[
+                active[:, np.newaxis] * minority[y, np.newaxis, :]
+            ] += wgt_recr_race  # targeted recruitment
 
         # application step
-        prev_eu = np.zeros(NUM_STUDS)
-        for i in range(np.max(napps)):
-            eu = util * padmit + (1 - padmit) * prev_eu
-            best = (eu * ~application[y]).argmax(axis=0)
-            prev_eu = np.take_along_axis(eu, best[None, :], axis=0)
-            np.put_along_axis(application[y], best[None, :], i < napps, axis=0)
+        prev_eu = np.zeros(NUM_STUDS)  # expected utility
+        for i in range(np.max(num_apps)):
+            eu = (
+                util * admit_prob + (1 - admit_prob) * prev_eu
+            )  # expected util of new apps
+            best = (eu * ~application[y]).argmax(
+                axis=0
+            )  # best coll for each stud is max eu and not already applied
+            prev_eu = np.take_along_axis(
+                eu, best[None, :], axis=0
+            )  # update expected util
+            np.put_along_axis(
+                application[y], best[None, :], i < num_apps, axis=0
+            )  # apply if enough num apps
 
         # admission step
-        ind_adm = np.argpartition(application[y] * (-cach[y]), nadms)
+        ind_adm = np.argpartition(
+            application[y] * (-coll_obs_ach[y]), num_adms
+        )  # sort (up to) top applications
         ind_c, ind_s = np.mgrid[:NUM_COLLS, :NUM_STUDS]
-        ind_nadms = ind_s < nadms[:, np.newaxis]
+        ind_nadms = ind_s < num_adms[:, np.newaxis]  # select top students
         ind_admk = ind_c[ind_nadms], ind_adm[ind_nadms]
-        admission[y][ind_admk] = application[y][ind_admk]
+        admission[y][ind_admk] = application[y][ind_admk]  # admit
 
         # enrollment step
-        ind_enr = np.argmax(util * admission[y], axis=0)
+        ind_enr = np.argmax(util * admission[y], axis=0)  # max utility if admitted
         enr_ = np.take_along_axis(admission[y], ind_enr[None, :], axis=0)
-        np.put_along_axis(enrollment[y], ind_enr[None, :], enr_, axis=0)
+        np.put_along_axis(enrollment[y], ind_enr[None, :], enr_, axis=0)  # enroll
 
-    num_minority = (minority[:, np.newaxis, :] * enrollment).sum(axis=2)
-    pct_minority = num_minority / enrollment.sum(axis=2)
+    # preprocess
 
-    ach_mean = (ach[:, np.newaxis, :] * enrollment).sum(axis=2) / enrollment.sum(axis=2)
+    num_minority = (minority[:, np.newaxis, :] * enrollment).sum(
+        axis=2
+    )  # per year coll
+    pct_minority = num_minority / enrollment.sum(axis=2)  # per year coll
+
+    ach_mean = (ach[:, np.newaxis, :] * enrollment).sum(axis=2) / enrollment.sum(
+        axis=2
+    )  # per year coll
+
+    # format output
 
     colleges = np.rec.fromarrays(
         np.broadcast_arrays(qual, active, pct_minority, ach_mean),
