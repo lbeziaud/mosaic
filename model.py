@@ -162,7 +162,6 @@ def run(
             )
 
         # update stud_obs_qual
-        # TODO
         stud_qual_rel_max = 0.7 if obs_qual_alt else 0.9
         stud_obs_qual_rel = np.clip(0.7 + 0.1 * res[year], 0.5, stud_qual_rel_max)
         stud_obs_qual_err_std = np.sqrt(
@@ -197,14 +196,11 @@ def run(
 
             # ses affirmative action
             if ses_alt:
-                # TODO
                 aa_ses = wgt_aa_ses * res[year]
             else:
                 if ses_penalty:
-                    # TODO
                     aa_ses = wgt_aa_ses * -1 * zscore(res[year])
                 else:
-                    # TODO
                     aa_ses = wgt_aa_ses * np.clip(-1 * zscore(res[year]), 0, None)
             coll_obs_ach[year, active] += aa_race + aa_ses
 
