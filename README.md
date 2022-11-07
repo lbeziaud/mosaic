@@ -16,33 +16,35 @@ This code has been written with Python 3.9. Required packages are listed in [req
 
 ## Usage
 
-1. Clone the repository
+1. Clone the repository:
 
-```console
-$ git clone https://github.com/lbeziaud/mosaic
-$ cd mosaic
-```
+    ```console
+    $ git clone https://github.com/lbeziaud/mosaic
+    $ cd mosaic
+    ```
 
-2. Install dependencies (in a virtualenv)
+2. Install dependencies in a virtual environment:
 
-```console
-$ python3.9 -m venv venv  # create venv
-$ source venv/bin/activate  # activate venv
-(venv) $ pip install -r requirements.txt
-```
+    ```console
+    $ python3.9 -m venv venv  # create venv
+    $ source venv/bin/activate  # activate venv
+    (venv) $ pip install -r requirements.txt
+    ```
 
-3. Generate the figures (run notebook in headless mode)
+3. Generate all the figures (in headless mode):
 
-```console
-(venv) $ jupyter nbconvert --ExecutePreprocessor.timeout=-1 --to notebook --inplace --execute figures.ipynb
-```
+    ```console
+    (venv) $ jupyter nbconvert --ExecutePreprocessor.timeout=-1 --to notebook --inplace --execute figures.ipynb
+    ```
+   
+   The whole notebook takes around 30 minutes to execute. Note that execution is cached on disk.
 
 4. Running the model is done by calling `model.run`, which returns a tuple of dataframes:
 
-```python
-from model import run
+    ```python
+    from model import run
+    
+    colleges, students, outcomes = run()
+    ```
 
-colleges, students, outcomes = run()
-```
-
-Several examples are provided in [utils_figs.py](utils_figs.py) on how to cache the run and on how to run and aggregate repeated experiments.
+    Several examples are provided in [utils_figs.py](utils_figs.py) on how to cache the run and on how to run and aggregate repeated experiments.
