@@ -77,6 +77,7 @@ order_res = ["Q1", "Q2", "Q3", "Q4", "Q5"]
 
 
 def kwargs_default_seeded(**kwargs):
+    """return a generator of arguments from kwargs with missing values set as default for each seed"""
     sq = np.random.SeedSequence(ENTROPY)
     seeds = sq.generate_state(N_REPEATS)
     yield from (kwargs_default(**kwargs) | dict(seed=seed) for seed in seeds)
@@ -120,6 +121,7 @@ def grid_run(param_grid, func):
 
 
 def studs_enrolled_active_after25(colleges, students, outcomes):
+    """Returns students enrolled into an active college after year 25"""
     return (
         outcomes[outcomes.enrollment]
         .xs(slice(25, None), level="year", drop_level=False)
@@ -156,6 +158,7 @@ def pct_ses_enroll(colleges, students, outcomes):
 
 
 def plot_lines_colls(y, ylabel, **params):
+    """Plot a ligne for each college for simulation with params."""
     colleges = run_repeat_colleges(**params)
     fig, ax = plt.subplots()
     sns.lineplot(
@@ -244,10 +247,11 @@ def coll_shift_aux(colleges, students, outcomes):
 
 
 def plot_d123(scenario, y):
-    """Plot figures D1, D2, D3."""
+    """Plot a grid of quiver arrows with ach on x-axis and configurable y-axis. scenario is a dict of label: params for
+    each cell of the grid"""
     nrows = len(scenario) // 2
 
-    fig, axes = plt.subplots(ncols=2, nrows=nrows, sharex=True, sharey=True)
+    fig, axes = plt.subplots(ncols=2, nrows=nrows, sharex="all", sharey="all")
 
     for ax, (title, df) in zip(axes.flat, scenario.items()):
         ax.set_title(title, fontsize=8)
