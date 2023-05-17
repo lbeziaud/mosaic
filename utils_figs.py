@@ -1,10 +1,10 @@
 from itertools import product, starmap
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from joblib import Memory
 from scipy.stats import norm
 
 from model import RACE_WEIGHTS, RES_LOCS, RES_SCALES
@@ -12,16 +12,51 @@ from model import run as run_uncached
 
 sns.set_style("whitegrid")
 
-# setup cached model run
-location = "./cache"
-memory = Memory(location, verbose=0, mmap_mode="r")
-run = memory.cache(run_uncached)
+location = Path("./results")
+
+DEFAULT = {
+    "n_years": 30,
+    "n_active": 4,
+    "wgt_aa_race": 0,
+    "wgt_aa_ses": 0,
+    "wgt_recruit": 0,
+    "obs_qual_alt": False,
+    "ses_penalty": False,
+    "ses_alt": False,
+    "seed": None
+}
+
+
+def kwargs_default(**kwargs):
+    return DEFAULT | kwargs
+
+
+def run(**kwargs):
+    kwargs = kwargs_default(**kwargs)
+    pattern = "/".join(f"{k}~{v}" for k, v in kwargs.items())
+    dirname = location / pattern
+
+    try:
+        colleges = pd.read_parquet(dirname / "colleges.parquet")
+        students = pd.read_parquet(dirname / "students.parquet")
+        outcomes = pd.read_parquet(dirname / "outcomes.parquet")
+    except FileNotFoundError:
+        colleges, students, outcomes = run_uncached(**kwargs)
+
+        dirname.mkdir(parents=True, exist_ok=True)
+
+        colleges.to_parquet(dirname / "colleges.parquet")
+        students.to_parquet(dirname / "students.parquet")
+        outcomes.to_parquet(dirname / "outcomes.parquet")
+
+    return colleges, students, outcomes
+
 
 # number of time each run is repeated
-n_repeats = 10
+N_REPEATS = 10
 
 # initial seed (use to generate subsequent seeds)
-entropy = 286130738418515439860296005820123389689
+ENTROPY = 286130738418515439860296005820123389689
 
 # number of quantile to consider for students' resources
 n_res_bins = 5
@@ -41,6 +76,12 @@ order_race = ["Black", "Hispanic", "Asian", "White"]
 order_res = ["Q1", "Q2", "Q3", "Q4", "Q5"]
 
 
+def kwargs_default_seeded(**kwargs):
+    sq = np.random.SeedSequence(ENTROPY)
+    seeds = sq.generate_state(N_REPEATS)
+    yield from (kwargs_default(**kwargs) | dict(seed=seed) for seed in seeds)
+
+
 def dict_product(d):
     """Cartesian product of input iterables with keys."""
     # dict_product({"A": [1, 2], "B": [3]}) --> [{'A': 1, 'B': 3}, {'A': 2, 'B': 3}]
@@ -49,9 +90,7 @@ def dict_product(d):
 
 def run_repeat(**params):
     """Run (cached) model multiple times with distinct seeds. Initial seed is constant."""
-    sq = np.random.SeedSequence(entropy)
-    seeds = sq.generate_state(n_repeats)
-    return (run(**params, seed=seed) for seed in seeds)
+    return (run(**params) for params in kwargs_default_seeded(**params))
 
 
 def run_repeat_colleges(**params):
@@ -80,13 +119,19 @@ def grid_run(param_grid, func):
     )
 
 
-def pct_race_enroll(colleges, students, outcomes):
-    """Percentage of total enrolled students after year 25 in active colleges by race."""
+def studs_enrolled_active_after25(colleges, students, outcomes):
     return (
         outcomes[outcomes.enrollment]
         .xs(slice(25, None), level="year", drop_level=False)
         .join(colleges[colleges.active], how="inner")
         .join(students)
+    )
+
+
+def pct_race_enroll(colleges, students, outcomes):
+    """Percentage of total enrolled students after year 25 in active colleges by race."""
+    return (
+        studs_enrolled_active_after25(colleges, students, outcomes)
         .race.value_counts(normalize=True, sort=False)
         .mul(100)
         .rename_axis("race")
@@ -98,10 +143,7 @@ def pct_ses_enroll(colleges, students, outcomes):
     """Percentage of total enrolled students after year 25 in active colleges by resources quintile."""
     return (
         pd.cut(
-            outcomes[outcomes.enrollment]
-            .xs(slice(25, None), level="year", drop_level=False)
-            .join(colleges[colleges.active], how="inner")
-            .join(students)
+            studs_enrolled_active_after25(colleges, students, outcomes)
             .res,
             bins=res_bins,
             labels=[f"Q{i}" for i in range(1, n_res_bins + 1)],
@@ -113,13 +155,12 @@ def pct_ses_enroll(colleges, students, outcomes):
     )
 
 
-def changes_bh_enrollment(**params):
-    """Plot change in Black and Hispanic enrollments."""
+def plot_lines_colls(y, ylabel, **params):
     colleges = run_repeat_colleges(**params)
     fig, ax = plt.subplots()
     sns.lineplot(
         x="year",
-        y="pct_minority",
+        y=y,
         hue="active",
         units="coll",
         data=colleges,
@@ -131,48 +172,27 @@ def changes_bh_enrollment(**params):
     )
     sns.lineplot(
         x="year",
-        y="pct_minority",
+        y=y,
         hue="active",
         data=colleges,
         legend=False,
         lw=3,
-        ci=None,
+        errorbar=None,
         ax=ax,
         palette=["darkgray", "black"],
     )
-    ax.set(xlabel="Year", ylabel="Percent minority")
+    ax.set(xlabel="Year", ylabel=ylabel)
     return fig
+
+
+def changes_bh_enrollment(**params):
+    """Plot change in Black and Hispanic enrollments."""
+    return plot_lines_colls(y="pct_minority", ylabel="Percent minority", **params)
 
 
 def changes_coll_qual(**params):
     """Plot change in colleges's quality."""
-    colleges = run_repeat_colleges(**params)
-    fig, ax = plt.subplots()
-    sns.lineplot(
-        x="year",
-        y="qual",
-        hue="active",
-        units="coll",
-        data=colleges,
-        estimator=None,
-        legend=False,
-        lw=0.5,
-        palette=["lightgray", "black"],
-        ax=ax,
-    )
-    sns.lineplot(
-        x="year",
-        y="qual",
-        hue="active",
-        data=colleges,
-        legend=False,
-        lw=3,
-        ci=None,
-        ax=ax,
-        palette=["darkgray", "black"],
-    )
-    ax.set(xlabel="Year", ylabel="College quality")
-    return fig
+    return plot_lines_colls(y="qual", ylabel="College quality", **params)
 
 
 def my_quiver(ax, df, x, y, z, t0, t1):
