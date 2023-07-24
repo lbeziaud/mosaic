@@ -112,16 +112,18 @@ def run(
     esd = np.sqrt(ach_scales**2 - b**2 * res_scales**2)
     ach = a[race] + b[race] * res + esd[race] * rng.normal(size=(n_years, n_studs))
 
+    bonus_ach = 0.1 * res * ach_scales[race]
+
     stud_obs_ach_rel = np.clip(0.7 + 0.1 * res, 0.5, 0.9)
     stud_obs_ach_err_std = np.sqrt(
         ach_var_mix * (1 - stud_obs_ach_rel) / stud_obs_ach_rel
     )
     stud_obs_ach_err = rng.normal(0, stud_obs_ach_err_std, (n_years, n_studs))
-    stud_obs_ach = ach + 0.1 * res + stud_obs_ach_err
+    stud_obs_ach = ach + bonus_ach + stud_obs_ach_err
 
     coll_obs_ach_err_std = np.sqrt(ach_var_mix * (1 - 0.8) / 0.8)
     coll_obs_ach_err = rng.normal(0, coll_obs_ach_err_std, (n_years, n_colls, n_studs))
-    coll_obs_ach = (ach + 0.1 * res)[:, np.newaxis, :] + coll_obs_ach_err
+    coll_obs_ach = (ach + bonus_ach)[:, np.newaxis, :] + coll_obs_ach_err
 
     stud_obs_qual_err_ = rng.normal(size=(n_years, n_colls, n_studs))  # pre-draw noise
 
