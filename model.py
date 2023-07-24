@@ -204,7 +204,12 @@ def run(
                     aa_ses = wgt_aa_ses * -1 * zscore(res[year])
                 else:
                     aa_ses = wgt_aa_ses * np.clip(-1 * zscore(res[year]), 0, None)
-            coll_obs_ach[year, active] += aa_race + aa_ses
+            # no ach std factor on active
+            coll_obs_ach[year, active] = (
+                (ach[year] + 0.1 * res[year])[np.newaxis, :] 
+                + coll_obs_ach_err[year, active] 
+                + aa_race + aa_ses
+            )
 
             # targeted recruitment
             util[active[:, np.newaxis] * minority[year, np.newaxis, :]] += wgt_recruit
