@@ -1,5 +1,7 @@
 # siMulating sOcioeconomic baSed AffirmatIve aCtion
 
+[![SWH](https://archive.softwareheritage.org/badge/swh:1:dir:b403980674f1f035ae85d7ad4063098485ce7c17/)](https://archive.softwareheritage.org/swh:1:dir:b403980674f1f035ae85d7ad4063098485ce7c17;origin=https://github.com/lbeziaud/mosaic;visit=swh:1:snp:bebbfb6e968909770c153e43232c0d0272c458f9;anchor=swh:1:rev:df1d04e37614c8f448d04ab7e001d4a33318ddca)
+
 Louis Béziaud, 2022
 
 > Reardon, S.F., Baker, R., Kasman, M., Klasik, D. and Townsend, J.B. (2018), What Levels of Racial Diversity Can Be Achieved with Socioeconomic-Based Affirmative Action? Evidence from a Simulation Model. J. Pol. Anal. Manage., 37: 630-657. https://doi.org/10.1002/pam.22056
